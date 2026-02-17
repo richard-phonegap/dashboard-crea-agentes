@@ -16,15 +16,7 @@
             @dragstart="onDragStart($event, 'agent')"
           >
             <span class="palette-icon">🧠</span>
-            <span>Agente</span>
-          </div>
-          <div
-            class="palette-item task"
-            draggable="true"
-            @dragstart="onDragStart($event, 'task')"
-          >
-            <span class="palette-icon">📋</span>
-            <span>Tarea</span>
+            <span>Agente con Tarea</span>
           </div>
         </div>
       </div>
@@ -44,27 +36,18 @@
             <span class="stat-num">{{ crew.agents.length }}</span>
             <span class="stat-label">Agentes</span>
           </div>
-          <div class="summary-stat">
-            <span class="stat-num">{{ crew.tasks.length }}</span>
-            <span class="stat-label">Tareas</span>
-          </div>
         </div>
+        <button class="btn btn-ghost btn-xs mt-4" @click="$router.push('/settings')">⚙️ Ajustes de LLM/MCP</button>
       </div>
 
       <div class="sidebar-actions">
-        <button
-          class="btn btn-primary"
-          style="width: 100%; margin-bottom: 8px;"
-          :disabled="crew.agents.length === 0 || crew.tasks.length === 0 || running"
-          @click="executeCrew"
-        >
-          {{ running ? '⏳ Ejecutando...' : '▶️ Ejecutar Equipo' }}
+        <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px;" :disabled="crew.agents.length === 0 || (crew.tasks.length === 0 && !crew.agents.some((a: any) => a.task_description)) || running" @click="executeCrew">
+          {{ running ? '⏳ Ejecutando...' : '▶️ Ejecutar Workflow' }}
         </button>
-        <button
-          class="btn btn-secondary"
-          style="width: 100%"
-          @click="openHistory"
-        >
+        <button v-if="running" class="btn btn-danger" style="width: 100%; margin-bottom: 8px;" @click="stopExecution">
+          🛑 Parar Ejecución
+        </button>
+        <button class="btn btn-secondary" style="width: 100%" @click="openHistory">
           📋 Historial de Ejecuciones
         </button>
       </div>
@@ -95,6 +78,9 @@
             <div class="node-body">
               <div class="node-field"><span class="field-label">Rol:</span> {{ data.role || 'Sin definir' }}</div>
               <div class="node-field"><span class="field-label">LLM:</span> {{ data.llm_model || 'gpt-4o-mini' }}</div>
+              <div v-if="data.task_description" class="node-field truncate mt-1">
+                <span class="field-label">Tarea:</span> {{ data.task_description }}
+              </div>
             </div>
             <Handle type="source" :position="Position.Right" class="handle-source" />
             <Handle type="target" :position="Position.Left" class="handle-target" />
@@ -133,7 +119,7 @@
     <aside class="config-panel animate-slide-in" v-if="selectedNode || crew">
       <div class="panel-header">
         <h3 v-if="selectedNode">{{ selectedNode.type === 'agent' ? '🧠 Agente' : '📋 Tarea' }}</h3>
-        <h3 v-else>⚙️ Configuración del Equipo</h3>
+        <h3 v-else>⚙️ Workflow</h3>
         <button class="btn btn-ghost btn-icon btn-sm" @click="selectedNodeId = null">✕</button>
       </div>
 
@@ -160,6 +146,11 @@
               <option value="sequential">Secuencial — Tareas en orden</option>
               <option value="hierarchical">Jerárquico — Un agente delega</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email de Salida (Opcional)</label>
+            <input class="input" type="email" v-model="crew.output_email" @change="updateCrewProperty('output_email', ($event.target as HTMLInputElement).value)" placeholder="ejemplo@gmail.com" />
+            <span class="text-xs text-muted">Se enviará el resultado final a esta dirección.</span>
           </div>
         </div>
       </div>
@@ -278,6 +269,27 @@
           />
         </div>
 
+        <div class="form-group checkbox-group mt-3">
+          <label class="checkbox-label">
+            <input type="checkbox" :checked="selectedNode.data.web_search_enabled" @change="updateNodeData('web_search_enabled', ($event.target as HTMLInputElement).checked)" />
+            <span :class="{ 'text-blue font-bold': selectedNode.data.web_search_enabled }">
+              {{ selectedNode.data.web_search_enabled ? '🌍 Búsqueda Web (Activada)' : '🌍 Habilitar Búsqueda Web' }}
+            </span>
+          </label>
+        </div>
+
+        <!-- Integrated Task Config -->
+        <div class="divider"></div>
+        <h4 class="text-xs font-bold uppercase text-muted mb-3">📋 Tarea Asignada</h4>
+        <div class="form-group">
+          <label class="form-label">Descripción de la Tarea</label>
+          <textarea class="textarea" :value="selectedNode.data.task_description" @change="updateNodeData('task_description', ($event.target as HTMLTextAreaElement).value)" placeholder="¿Qué debe hacer exactamente este agente?" rows="4"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Output Esperado</label>
+          <textarea class="textarea" :value="selectedNode.data.task_expected_output" @change="updateNodeData('task_expected_output', ($event.target as HTMLTextAreaElement).value)" placeholder="¿Cómo debe ser el resultado?" rows="2"></textarea>
+        </div>
+
         <!-- Skills Section -->
         <div class="divider"></div>
         <div class="form-group">
@@ -392,8 +404,8 @@ import '@vue-flow/controls/dist/style.css'
 import { marked } from 'marked'
 
 import {
-  crewsApi, agentsApi, tasksApi, runsApi, llmApi,
-  type Crew, type Agent, type Task, type Run, type LLMModel, type LogEntry,
+  crewsApi, agentsApi, tasksApi, runsApi, llmApi, configApi,
+  type Crew, type Agent, type Task, type Run, type LogEntry,
 } from '../api'
 
 const route = useRoute()
@@ -403,8 +415,9 @@ const crew = ref<Crew | null>(null)
 const nodes = ref<any[]>([])
 const edges = ref<any[]>([])
 const selectedNodeId = ref<string | null>(null)
-const llmModels = ref<LLMModel[]>([])
+const llmModels = ref<any[]>([])
 const running = ref(false)
+const currentRunId = ref<string | null>(null)
 const runResult = ref<Run | null>(null)
 const activeTab = ref('config') // 'config', 'schedule', 'public'
 
@@ -437,7 +450,14 @@ const parsedLogs = computed<LogEntry[]>(() => {
 })
 
 onMounted(async () => {
-  llmModels.value = await llmApi.models()
+  // Load dynamic models first
+  const dynamicModels = await configApi.listLlms()
+  if (dynamicModels.length > 0) {
+    llmModels.value = dynamicModels.map((m: any) => ({ id: m.model_id, name: m.name, provider: m.provider }))
+  } else {
+    // Fallback to static if none configured
+    llmModels.value = await llmApi.models()
+  }
 
   const crewId = route.params.id as string
   if (crewId) {
@@ -475,40 +495,17 @@ function buildNodesFromCrew() {
         temperature: a.temperature,
         skills: a.skills,
         is_manager: a.is_manager,
+        task_description: a.task_description,
+        task_expected_output: a.task_expected_output,
+        web_search_enabled: a.web_search_enabled,
         dbId: a.id,
       },
     })
   })
 
-  crew.value.tasks.forEach((t) => {
-    const agentName = crew.value!.agents.find(a => a.id === t.agent_id)?.name
-    newNodes.push({
-      id: t.id,
-      type: 'task',
-      position: { x: t.position_x, y: t.position_y },
-      data: {
-        label: t.name,
-        description: t.description,
-        expected_output: t.expected_output,
-        agent_id: t.agent_id,
-        agent_name: agentName,
-        order: t.order,
-        dbId: t.id,
-      },
-    })
-
-    // Auto-create edge from agent to task
-    if (t.agent_id) {
-      newEdges.push({
-        id: `e-${t.agent_id}-${t.id}`,
-        source: t.agent_id,
-        target: t.id,
-        animated: true,
-        style: { stroke: 'var(--accent-primary)', strokeWidth: 2 },
-      })
-    }
-  })
-
+  // We no longer show Tasks as separate nodes unless they exist and aren't migrated
+  // But for this version, we focus on Agent nodes with integrated tasks.
+  
   nodes.value = newNodes
   edges.value = newEdges
 }
@@ -585,12 +582,16 @@ async function onConnect(event: any) {
   const sourceNode = nodes.value.find(n => n.id === event.source)
   const targetNode = nodes.value.find(n => n.id === event.target)
 
-  // Connect agent → task
-  if (sourceNode?.type === 'agent' && targetNode?.type === 'task') {
-    await tasksApi.update(crew.value.id, event.target, { agent_id: event.source })
-    const task = crew.value.tasks.find(t => t.id === event.target)
-    if (task) task.agent_id = event.source
-    buildNodesFromCrew()
+  // Connect agent → agent (ordering/dependency)
+  if (sourceNode?.type === 'agent' && targetNode?.type === 'agent') {
+    // For now simple visual connection, could be used for hierarchical delegaton
+    edges.value.push({
+      id: `e-${event.source}-${event.target}`,
+      source: event.source,
+      target: event.target,
+      animated: true,
+      style: { stroke: 'var(--accent-primary)', strokeWidth: 2 },
+    })
   }
 }
 
@@ -701,16 +702,38 @@ function openHistory() {
   }
 }
 
-async function executeCrew() {
-  if (!crew.value || running.value) return
+const executeCrew = async () => {
+  if (!crew.value) return
   running.value = true
+  runResult.value = null
+  currentRunId.value = null
   try {
     const run = await runsApi.start(crew.value.id)
-    runResult.value = run
-  } catch (e) {
-    console.error('Execution error:', e)
-  } finally {
+    currentRunId.value = run.id
+    // Poll for result or use WebSocket (already exists in some form?)
+    const checkStatus = setInterval(async () => {
+      const updatedRun = await runsApi.get(crew.value!.id, run.id)
+      if (updatedRun.status !== 'running') {
+        clearInterval(checkStatus)
+        runResult.value = updatedRun
+        running.value = false
+        currentRunId.value = null
+      }
+    }, 2000)
+  } catch (err) {
+    alert('Error al iniciar: ' + err)
     running.value = false
+  }
+}
+
+const stopExecution = async () => {
+  if (!crew.value || !currentRunId.value) return
+  if (confirm('¿Detener la ejecución actual?')) {
+    try {
+      await runsApi.stop(crew.value.id, currentRunId.value)
+    } catch (err) {
+      alert('Error al detener: ' + err)
+    }
   }
 }
 

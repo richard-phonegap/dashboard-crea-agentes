@@ -17,6 +17,8 @@ class AgentCreate(BaseModel):
     position_y: float = 0
     skills: str = "[]"
     is_manager: bool = False
+    task_description: Optional[str] = None
+    task_expected_output: Optional[str] = None
 
 
 class AgentUpdate(BaseModel):
@@ -31,6 +33,8 @@ class AgentUpdate(BaseModel):
     position_y: Optional[float] = None
     skills: Optional[str] = None
     is_manager: Optional[bool] = None
+    task_description: Optional[str] = None
+    task_expected_output: Optional[str] = None
 
 
 class AgentResponse(BaseModel):
@@ -47,6 +51,8 @@ class AgentResponse(BaseModel):
     position_y: float
     skills: str
     is_manager: bool
+    task_description: Optional[str]
+    task_expected_output: Optional[str]
     created_at: datetime
 
     class Config:
@@ -100,6 +106,7 @@ class CrewCreate(BaseModel):
     schedule_type: str = "none"
     schedule_value: Optional[str] = None
     is_public: bool = False
+    output_email: Optional[str] = None
 
 
 class CrewUpdate(BaseModel):
@@ -109,6 +116,7 @@ class CrewUpdate(BaseModel):
     schedule_type: Optional[str] = None
     schedule_value: Optional[str] = None
     is_public: Optional[bool] = None
+    output_email: Optional[str] = None
     canvas_state: Optional[str] = None
 
 
@@ -120,6 +128,7 @@ class CrewResponse(BaseModel):
     schedule_type: str
     schedule_value: Optional[str]
     is_public: bool
+    output_email: Optional[str]
     canvas_state: str
     agents: List[AgentResponse] = []
     tasks: List[TaskResponse] = []
@@ -159,9 +168,51 @@ class RunResponse(BaseModel):
         from_attributes = True
 
 
-# ─── LLM Schemas ───
+# ─── Config Schemas ───
 
-class LLMModel(BaseModel):
-    id: str
+class LLMConfigBase(BaseModel):
     name: str
+    model_id: str
     provider: str
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+class LLMConfigCreate(LLMConfigBase):
+    pass
+
+class LLMConfigUpdate(BaseModel):
+    name: Optional[str] = None
+    model_id: Optional[str] = None
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+class LLMConfigResponse(LLMConfigBase):
+    id: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MCPServerBase(BaseModel):
+    name: str
+    command: str
+    args: str = "[]"
+    env: str = "{}"
+
+class MCPServerCreate(MCPServerBase):
+    pass
+
+class MCPServerUpdate(BaseModel):
+    name: Optional[str] = None
+    command: Optional[str] = None
+    args: Optional[str] = None
+    env: Optional[str] = None
+
+class MCPServerResponse(MCPServerBase):
+    id: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -31,6 +31,10 @@ class Agent(Base):
     position_y = Column(Float, default=0)
     skills = Column(Text, default="[]")  # List of skills as JSON
     is_manager = Column(Boolean, default=False)
+    # Integrated task fields
+    task_description = Column(Text, nullable=True)
+    task_expected_output = Column(Text, nullable=True)
+    web_search_enabled = Column(Boolean, default=False)
     created_at = Column(DateTime, default=utcnow)
 
     crew = relationship("Crew", back_populates="agents")
@@ -67,6 +71,7 @@ class Crew(Base):
     schedule_type = Column(String(20), default="none")  # none | once | interval | cron
     schedule_value = Column(String(100), nullable=True)
     is_public = Column(Boolean, default=False)
+    output_email = Column(String(200), nullable=True)
     # Canvas state stored as JSON (edges, viewport, etc.)
     canvas_state = Column(Text, default="{}")
     created_at = Column(DateTime, default=utcnow)
@@ -102,3 +107,26 @@ class Run(Base):
             "message": message,
         })
         self.logs = json.dumps(current_logs)
+
+
+class LLMConfig(Base):
+    __tablename__ = "llm_configs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False)
+    model_id = Column(String(100), nullable=False)
+    provider = Column(String(50), nullable=False)
+    base_url = Column(String(255), nullable=True)
+    api_key = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class MCPServer(Base):
+    __tablename__ = "mcp_servers"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False)
+    command = Column(String(255), nullable=False)
+    args = Column(Text, default="[]")  # JSON list
+    env = Column(Text, default="{}")   # JSON dict
+    created_at = Column(DateTime, default=utcnow)

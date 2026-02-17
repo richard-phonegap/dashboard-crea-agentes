@@ -2,96 +2,153 @@ import json
 import asyncio
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from models.models import Crew, Run, Agent, Task
+from sqlalchemy import select
+from models.models import Crew, Run, Agent, Task, LLMConfig
 
 import litellm
 from config import settings
+from utils.email import send_workflow_report
 
 # Configure Ollama API base for LiteLLM
 import os
 os.environ["OLLAMA_API_BASE"] = settings.OLLAMA_API_BASE
 
 
+
 class Orchestrator:
     """Motor de orquestación que ejecuta crews de agentes secuencialmente."""
 
-    def __init__(self, db: AsyncSession):
+    # Global registry for active execution tasks: {run_id: asyncio.Task}
+    _active_tasks: dict[str, asyncio.Task] = {}
+
+    def __init__(self, db: AsyncSession = None):
         self.db = db
         self._ws_connections: dict[str, list] = {}
 
-    async def execute_crew(self, crew: Crew) -> Run:
-        """Execute all tasks in a crew sequentially."""
-        run = Run(
-            crew_id=crew.id,
-            status="running",
-            started_at=datetime.now(timezone.utc),
-        )
-        self.db.add(run)
-        await self.db.commit()
-        await self.db.refresh(run)
-
-        try:
-            # Sort tasks by order
-            sorted_tasks = sorted(crew.tasks, key=lambda t: t.order)
-            results = []
-            total_tokens = 0
-
-            for task in sorted_tasks:
-                agent = self._find_agent_for_task(task, crew.agents)
-                if not agent:
-                    run.add_log(
-                        f"⚠️ Tarea '{task.name}' no tiene agente asignado, usando el primero disponible.",
-                        level="warning"
-                    )
-                    agent = crew.agents[0]
-
-                run.add_log(
-                    f"🚀 Iniciando tarea: {task.name}",
-                    agent_name=agent.name,
-                    level="info"
-                )
-                await self.db.commit()
-
-                # Execute the task with the assigned agent
-                result, tokens = await self._execute_task(task, agent, results, run)
-
-                total_tokens += tokens
-                results.append({
-                    "task": task.name,
-                    "agent": agent.name,
-                    "output": result,
-                })
-
-                run.add_log(
-                    f"✅ Tarea completada: {task.name}",
-                    agent_name=agent.name,
-                    level="success"
-                )
-                await self.db.commit()
-
-            # Compile final result
-            final_result = "\n\n---\n\n".join(
-                f"## {r['task']}\n**Agente:** {r['agent']}\n\n{r['output']}"
-                for r in results
+    async def process_run(self, run_id: str, crew_id: str):
+        """Execute all tasks in a crew sequentially (background task) with self-managed session."""
+        from db.database import async_session
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+        
+        async with async_session() as session:
+            self.db = session
+            
+            # Re-fetch objects with the new session
+            result = await session.execute(select(Run).where(Run.id == run_id))
+            run = result.scalar_one_or_none()
+            
+            result_crew = await session.execute(
+                select(Crew)
+                .options(selectinload(Crew.agents), selectinload(Crew.tasks))
+                .where(Crew.id == crew_id)
             )
+            crew = result_crew.scalar_one_or_none()
+            
+            if not run or not crew:
+                print(f"❌ Error: Run {run_id} or Crew {crew_id} not found in background task.")
+                return
 
-            run.status = "completed"
-            run.result = final_result
-            run.tokens_used = total_tokens
-            run.cost = self._estimate_cost(total_tokens)
-            run.completed_at = datetime.now(timezone.utc)
-            run.add_log("🎉 Ejecución completada exitosamente.", level="success")
+            # Register core task for cancellation
+            try:
+                current_task = asyncio.current_task()
+                if current_task:
+                    Orchestrator._active_tasks[run.id] = current_task
+            except Exception:
+                pass
 
-        except Exception as e:
-            run.status = "failed"
-            run.result = f"Error: {str(e)}"
-            run.completed_at = datetime.now(timezone.utc)
-            run.add_log(f"❌ Error: {str(e)}", level="error")
+            try:
+                # 1. Prepare tasks
+                if crew.tasks:
+                    sorted_tasks = sorted(crew.tasks, key=lambda t: t.order)
+                    task_items = [(task, self._find_agent_for_task(task, crew.agents)) for task in sorted_tasks]
+                else:
+                    task_items = []
+                    for agent in crew.agents:
+                        if agent.task_description:
+                            v_task = Task(
+                                name=f"Tarea de {agent.name}",
+                                description=agent.task_description,
+                                expected_output=agent.task_expected_output or ""
+                            )
+                            task_items.append((v_task, agent))
 
-        await self.db.commit()
-        await self.db.refresh(run)
-        return run
+                # 2. Execute tasks
+                results = []
+                total_tokens = 0
+
+                for task, agent in task_items:
+                    if not agent:
+                        run.add_log(
+                            f"⚠️ Tarea '{task.name}' no tiene agente asignado, usando el primero disponible.",
+                            level="warning"
+                        )
+                        agent = crew.agents[0]
+
+                    run.add_log(
+                        f"🚀 Iniciando tarea: {task.name}",
+                        agent_name=agent.name,
+                        level="info"
+                    )
+                    await self.db.commit()
+
+                    # Execute the task with the assigned agent
+                    result, tokens = await self._execute_task(task, agent, results, run)
+
+                    total_tokens += tokens
+                    results.append({
+                        "task": task.name,
+                        "agent": agent.name,
+                        "output": result,
+                    })
+
+                    run.add_log(
+                        f"✅ Tarea completada: {task.name}",
+                        agent_name=agent.name,
+                        level="success"
+                    )
+                    await self.db.commit()
+
+                # 3. Finalize run
+                final_result = "<br><hr><br>".join(
+                    f"## {r['task']}\n**Agente:** {r['agent']}\n\n{r['output']}"
+                    for r in results
+                )
+
+                run.status = "completed"
+                run.result = final_result
+                run.tokens_used = total_tokens
+                run.cost = self._estimate_cost(total_tokens)
+                run.completed_at = datetime.now(timezone.utc)
+                run.add_log("🎉 Ejecución completada exitosamente.", level="success")
+                
+                # Send Email Report if configured
+                if crew.output_email:
+                    run.add_log(f"📧 Enviando reporte por email a: {crew.output_email}", level="info")
+                    await send_workflow_report(crew.output_email, crew.name, final_result)
+
+                await self.db.commit()
+
+            except asyncio.CancelledError:
+                run.status = "failed"
+                run.result = "Ejecución cancelada por el usuario."
+                run.completed_at = datetime.now(timezone.utc)
+                run.add_log("🛑 La ejecución fue detenida manualmente.", level="warning")
+                await self.db.commit()
+                raise
+            except Exception as e:
+                run.status = "failed"
+                run.result = f"Error: {str(e)}"
+                run.completed_at = datetime.now(timezone.utc)
+                run.add_log(f"❌ Error durante la ejecución: {str(e)}", level="error")
+                await self.db.commit()
+            finally:
+                # Unregister task
+                if run.id in Orchestrator._active_tasks:
+                    del Orchestrator._active_tasks[run.id]
+            
+            await self.db.refresh(run)
+            return run
 
     async def _execute_task(
         self, task: Task, agent: Agent, previous_results: list[dict], run: Run
@@ -111,6 +168,17 @@ class Orchestrator:
                     scraping_context += f"\n\n### Contenido extraído de {url}:\n{content[:5000]}\n"
         except Exception as e:
             run.add_log(f"⚠️ Error in skill execution: {str(e)}", level="warning")
+
+        # Handle Web Search Capability
+        if getattr(agent, 'web_search_enabled', False):
+            try:
+                run.add_log(f"🔎 Buscando en la web sobre: {task.description[:50]}...", agent_name=agent.name, level="info")
+                from tools.search import search_web
+                # Use task description as search query
+                search_results = await search_web(task.description[:200]) # Limit query length
+                scraping_context += f"\n\n### Resultados de Búsqueda Web:\n{search_results}\n"
+            except Exception as e:
+                run.add_log(f"⚠️ Error en búsqueda web: {str(e)}", level="warning")
 
         # Build context from previous results
         context = ""
@@ -157,9 +225,36 @@ class Orchestrator:
         )
 
         try:
-            # Build kwargs, include api_base for Ollama models
+            # Check for dynamic LLM configuration
+            model_name = agent.llm_model.strip()
+            api_base = None
+            
+            # Query LLMConfig for custom settings using the model identifier
+            result = await self.db.execute(select(LLMConfig).where(LLMConfig.model_id == model_name))
+            llm_config = result.scalar_one_or_none()
+            
+            custom_api_key = None
+            if llm_config:
+                if llm_config.base_url:
+                    api_base = llm_config.base_url
+                if llm_config.api_key:
+                    custom_api_key = llm_config.api_key
+                
+                # Ensure model name has provider prefix for LiteLLM (e.g., 'ollama/llama3')
+                # But only if it doesn't already have a slash (which usually denotes a provider)
+                if "/" not in model_name:
+                    model_name = f"{llm_config.provider}/{model_name}"
+            
+            elif model_name.startswith("ollama/"):
+                api_base = settings.OLLAMA_API_BASE
+            elif "/" not in model_name:
+                # Fallback: if no config found and no prefix, default to ollama for local-looking models
+                model_name = f"ollama/{model_name}"
+                api_base = settings.OLLAMA_API_BASE
+
+            # Build kwargs
             kwargs = {
-                "model": agent.llm_model,
+                "model": model_name,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -167,8 +262,10 @@ class Orchestrator:
                 "temperature": agent.temperature,
                 "max_tokens": int(agent.max_tokens),
             }
-            if agent.llm_model.startswith("ollama/"):
-                kwargs["api_base"] = settings.OLLAMA_API_BASE
+            if api_base:
+                kwargs["api_base"] = api_base
+            if custom_api_key:
+                kwargs["api_key"] = custom_api_key
 
             response = await litellm.acompletion(**kwargs)
 
@@ -191,3 +288,11 @@ class Orchestrator:
         """Rough cost estimation based on token usage."""
         # Approximate cost per 1K tokens (blended input/output)
         return round(tokens * 0.000015, 6)
+    @classmethod
+    def stop_run(cls, run_id: str):
+        """Cancels a running task by its run_id."""
+        task = cls._active_tasks.get(run_id)
+        if task:
+            task.cancel()
+            return True
+        return False

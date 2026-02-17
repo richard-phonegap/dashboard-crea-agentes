@@ -7,6 +7,7 @@ from db.database import init_db
 from api.routes.crews import router as crews_router
 from api.routes.runs import router as runs_router
 from api.routes.services import router as services_router
+from api.routes.config import router as config_router
 from core.scheduler import scheduler
 
 
@@ -38,6 +39,7 @@ app.add_middleware(
 app.include_router(crews_router)
 app.include_router(runs_router)
 app.include_router(services_router)
+app.include_router(config_router)
 
 
 @app.get("/api/health")

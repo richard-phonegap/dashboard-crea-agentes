@@ -2,12 +2,14 @@
   <div class="dashboard">
     <div class="dashboard-header animate-fade-in">
       <div>
-        <h1>Mis Equipos</h1>
-        <p class="text-muted">Diseña y gestiona tus equipos de agentes IA</p>
+        <h1>Mis Workflows</h1>
+        <p class="text-muted">Diseña y gestiona tus workflows de agentes IA</p>
       </div>
-      <button class="btn btn-primary btn-lg" @click="showCreateModal = true">
-        ✨ Nuevo Equipo
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-primary btn-lg" @click="showCreateModal = true">
+          ✨ Nuevo Workflow
+        </button>
+      </div>
     </div>
 
     <div class="crews-grid" v-if="crews.length > 0">
@@ -45,19 +47,19 @@
 
     <div v-else class="empty-state animate-fade-in">
       <div class="empty-icon">🚀</div>
-      <h2>¡Crea tu primer equipo!</h2>
+      <h2>¡Crea tu primer workflow!</h2>
       <p class="text-muted">
-        Un equipo es un grupo de agentes IA que colaboran para completar tareas complejas.
+        Un workflow es un grupo de agentes IA que colaboran para completar tareas complejas.
       </p>
       <button class="btn btn-primary btn-lg" @click="showCreateModal = true">
-        ✨ Crear Equipo
+        ✨ Crear Workflow
       </button>
     </div>
 
     <!-- Create Modal -->
     <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
       <div class="modal animate-fade-in">
-        <h2>Nuevo Equipo</h2>
+        <h2>Nuevo Workflow</h2>
         <form @submit.prevent="createCrew">
           <div class="form-group">
             <label class="form-label">Nombre</label>
@@ -65,7 +67,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Descripción</label>
-            <textarea class="textarea" v-model="newCrew.description" placeholder="¿Qué hace este equipo?" rows="3"></textarea>
+            <textarea class="textarea" v-model="newCrew.description" placeholder="¿Qué hace este workflow?" rows="3"></textarea>
           </div>
           <div class="form-group">
             <label class="form-label">Proceso</label>
@@ -76,7 +78,7 @@
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showCreateModal = false">Cancelar</button>
-            <button type="submit" class="btn btn-primary" :disabled="!newCrew.name">Crear Equipo</button>
+            <button type="submit" class="btn btn-primary" :disabled="!newCrew.name">Crear Workflow</button>
           </div>
         </form>
       </div>
@@ -118,7 +120,7 @@ async function createCrew() {
 }
 
 async function deleteCrew(id: string) {
-  if (!confirm('¿Eliminar este equipo?')) return
+  if (!confirm('¿Eliminar este workflow?')) return
   try {
     await crewsApi.delete(id)
     await loadCrews()

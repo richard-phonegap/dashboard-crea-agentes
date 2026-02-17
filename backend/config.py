@@ -5,7 +5,7 @@ load_dotenv()
 
 
 class Settings:
-    APP_NAME: str = "AgentForge"
+    APP_NAME: str = "AgentsRichard"
     APP_VERSION: str = "0.1.0"
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/agentforge.db")
     
@@ -35,6 +35,12 @@ class Settings:
         "http://localhost:3000",
         "http://localhost:3001",
     ]
+
+    # SMTP Settings for Email Output
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASS: str = os.getenv("SMTP_PASS", "") # App Password for Gmail
 
 
 settings = Settings()

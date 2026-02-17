@@ -11,6 +11,7 @@ const router = createRouter({
         { path: '/editor/:id?', component: () => import('./views/Editor.vue') },
         { path: '/history/:id', component: () => import('./views/History.vue') },
         { path: '/monitor/:runId', component: () => import('./views/Monitor.vue') },
+        { path: '/settings', component: () => import('./views/Settings.vue') },
     ],
 })
 

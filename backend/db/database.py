@@ -32,6 +32,10 @@ async def init_db():
                 connection.execute(text("ALTER TABLE agents ADD COLUMN skills TEXT DEFAULT '[]'"))
             if "is_manager" not in columns:
                 connection.execute(text("ALTER TABLE agents ADD COLUMN is_manager BOOLEAN DEFAULT 0"))
+            if "task_description" not in columns:
+                connection.execute(text("ALTER TABLE agents ADD COLUMN task_description TEXT"))
+            if "task_expected_output" not in columns:
+                connection.execute(text("ALTER TABLE agents ADD COLUMN task_expected_output TEXT"))
             
             # Migration: Add scheduling and publicity to crews table
             res = connection.execute(text("PRAGMA table_info(crews)"))
@@ -42,5 +46,13 @@ async def init_db():
                 connection.execute(text("ALTER TABLE crews ADD COLUMN schedule_value TEXT"))
             if "is_public" not in crew_columns:
                 connection.execute(text("ALTER TABLE crews ADD COLUMN is_public BOOLEAN DEFAULT 0"))
+            if "output_email" not in crew_columns:
+                connection.execute(text("ALTER TABLE crews ADD COLUMN output_email TEXT"))
+            
+            # Migration: Add api_key to llm_configs table
+            res = connection.execute(text("PRAGMA table_info(llm_configs)"))
+            llm_columns = [row[1] for row in res]
+            if "api_key" not in llm_columns:
+                connection.execute(text("ALTER TABLE llm_configs ADD COLUMN api_key TEXT"))
                 
         await conn.run_sync(run_migrations)

@@ -21,6 +21,9 @@ export interface Agent {
     position_y: number
     skills: string
     is_manager: boolean
+    task_description?: string
+    task_expected_output?: string
+    web_search_enabled?: boolean
     created_at: string
 }
 
@@ -45,6 +48,7 @@ export interface Crew {
     schedule_type: string
     schedule_value: string | null
     is_public: boolean
+    output_email?: string
     canvas_state: string
     agents: Agent[]
     tasks: Task[]
@@ -83,10 +87,23 @@ export interface LogEntry {
     message: string
 }
 
-export interface LLMModel {
+export interface LLMConfig {
     id: string
     name: string
+    model_id: string
     provider: string
+    base_url?: string
+    api_key?: string
+    created_at: string
+}
+
+export interface MCPServer {
+    id: string
+    name: string
+    command: string
+    args: string
+    env: string
+    created_at: string
 }
 
 // ─── API Functions ───
@@ -124,12 +141,30 @@ export const runsApi = {
         api.get<Run[]>(`/crews/${crewId}/runs`).then(r => r.data),
     start: (crewId: string) =>
         api.post<Run>(`/crews/${crewId}/runs`).then(r => r.data),
-    get: (crewId: string, runId: string) =>
-        api.get<Run>(`/crews/${crewId}/runs/${runId}`).then(r => r.data),
+    async get(crewId: string, runId: string): Promise<Run> {
+        const res = await api.get(`/crews/${crewId}/runs/${runId}`)
+        return res.data
+    },
+    async stop(crewId: string, runId: string): Promise<any> {
+        const res = await api.post(`/crews/${crewId}/runs/${runId}/stop`)
+        return res.data
+    }
+}
+
+export const configApi = {
+    listLlms: () => api.get<LLMConfig[]>('/config/llms').then(r => r.data),
+    createLlm: (data: Partial<LLMConfig>) => api.post<LLMConfig>('/config/llms', data).then(r => r.data),
+    updateLlm: (id: string, data: Partial<LLMConfig>) => api.put<LLMConfig>(`/config/llms/${id}`, data).then(r => r.data),
+    deleteLlm: (id: string) => api.delete(`/config/llms/${id}`),
+
+    listMcp: () => api.get<MCPServer[]>('/config/mcp').then(r => r.data),
+    createMcp: (data: Partial<MCPServer>) => api.post<MCPServer>('/config/mcp', data).then(r => r.data),
+    updateMcp: (id: string, data: Partial<MCPServer>) => api.put<MCPServer>(`/config/mcp/${id}`, data).then(r => r.data),
+    deleteMcp: (id: string) => api.delete(`/config/mcp/${id}`),
 }
 
 export const llmApi = {
-    models: () => api.get<LLMModel[]>('/llm-models').then(r => r.data),
+    models: () => api.get<any[]>('/llm-models').then(r => r.data),
 }
 
 export default api

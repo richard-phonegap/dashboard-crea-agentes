@@ -3,7 +3,7 @@
     <div class="history-header animate-fade-in">
       <div>
         <h1>Historial de Ejecuciones</h1>
-        <p class="text-muted" v-if="crew">Equipo: {{ crew.name }}</p>
+        <p class="text-muted" v-if="crew">Workflow: {{ crew.name }}</p>
       </div>
       <button class="btn btn-secondary" @click="$router.back()">← Volver</button>
     </div>
@@ -40,7 +40,7 @@
     <div v-else class="empty-state">
       <div class="empty-icon">📅</div>
       <h2>No hay ejecuciones aún</h2>
-      <p class="text-muted">Ejecuta este equipo desde el editor para ver los resultados aquí.</p>
+      <p class="text-muted">Ejecuta este workflow desde el editor para ver los resultados aquí.</p>
       <button class="btn btn-primary" @click="$router.push(`/editor/${crewId}`)">Ir al Editor</button>
     </div>
   </div>

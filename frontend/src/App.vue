@@ -4,7 +4,7 @@
       <div class="header-left">
         <router-link to="/" class="logo">
           <span class="logo-icon">⚡</span>
-          <span class="logo-text">AgentForge</span>
+          <span class="logo-text">AgentsRichard</span>
         </router-link>
       </div>
       <nav class="header-nav">
@@ -13,6 +13,9 @@
         </router-link>
         <router-link to="/editor" class="nav-link" active-class="active">
           <span class="nav-icon">🎨</span> Editor
+        </router-link>
+        <router-link to="/settings" class="nav-link" active-class="active">
+          <span class="nav-icon">⚙️</span> Ajustes
         </router-link>
       </nav>
       <div class="header-right">

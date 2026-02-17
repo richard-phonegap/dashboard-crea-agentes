@@ -1,4 +1,4 @@
-# ⚡ AgentForge
+# ⚡# AgentsRichard 🛠️
 
 **Plataforma visual de orquestación multi-agente** — Diseña, configura y ejecuta equipos de agentes IA mediante una interfaz drag-and-drop, sin escribir código.
 
