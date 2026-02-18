@@ -1,0 +1,13 @@
+tools:
+  database:
+    connections: []
+    enabled: false
+  llm:
+    api_base: http://host.docker.internal:11434
+    api_key: ''
+    enabled: true
+    model: gemma3:latest
+    provider: ollama
+  scraper:
+    enabled: true
+    user_agent: Mozilla/5.0 (compatible; MCPScraper/1.0)
